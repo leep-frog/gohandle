@@ -5,7 +5,10 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 type TemplateFile string
@@ -87,9 +90,23 @@ func Handle(h Handler) {
 	})
 }
 
-func Run(port string, handlers []Handler) {
+const LOCAL_ENV_VAR = "GOHANDLE_LOCAL"
+
+func Run(handlers []Handler) {
 	for _, h := range handlers {
 		Handle(h)
+	}
+
+	port := ":8080"
+
+	local := strings.TrimSpace(os.Getenv(LOCAL_ENV_VAR)) != ""
+	if local {
+		// Update port (so windows doesn't ask allow/block prompt)
+		port = "127.0.0.1:8080"
+		// Open Chrome
+		if err := exec.Command("cmd", `/c`, "start", `C:\Program Files\Google\Chrome\Application\chrome.exe`, `http://localhost:8080`).Start(); err != nil {
+			log.Fatalf("Failed to run chrome:", err)
+		}
 	}
 
 	if err := http.ListenAndServe(port, nil); err != nil {
