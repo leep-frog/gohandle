@@ -20,14 +20,11 @@ func Join(ss ...string) TemplateFile {
 }
 
 type Handler interface {
+	http.Handler
 	GetPattern() string
-	GetTemplate() TemplateFile
-	GetTemplates() TemplateFiles
-	GetFunctions() []Function
-	GetData() any
 }
 
-type SimpleHandler struct {
+type TemplateHandler struct {
 	Pattern   string
 	Template  TemplateFile
 	Templates TemplateFiles
@@ -35,24 +32,44 @@ type SimpleHandler struct {
 	Data      any
 }
 
-func (sh *SimpleHandler) GetPattern() string {
+func (sh *TemplateHandler) GetPattern() string {
 	return sh.Pattern
 }
 
-func (sh *SimpleHandler) GetTemplate() TemplateFile {
-	return sh.Template
+func (sh *TemplateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// TODO: implement our own pattern handling since the pattern handling
+	// by net/http includes all sub paths
+	// https://pkg.go.dev/net/http#ServeMux
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	funcs := sh.Functions
+	funcMap := map[string]any{}
+	for _, f := range funcs {
+		funcMap[f.Name()] = f.Func()
+	}
+	baseName := filepath.Base(string(sh.Template))
+	tmpl, err := template.New(baseName).Funcs(funcMap).ParseFiles(convertTemplates(sh.Templates)...)
+	if err != nil {
+		w.Write([]byte(fmt.Sprintf("Server error: failed to render template: %v", err)))
+		return
+	}
+
+	if err := tmpl.Execute(w, sh.Data); err != nil {
+		w.Write([]byte(fmt.Sprintf("Template error: %v", err)))
+	}
 }
 
-func (sh *SimpleHandler) GetTemplates() TemplateFiles {
-	return sh.Templates
+type RedirectHandler struct {
+	Pattern string
+	Dest    string
 }
 
-func (sh *SimpleHandler) GetFunctions() []Function {
-	return sh.Functions
+func (rh *RedirectHandler) GetPattern() string {
+	return rh.Pattern
 }
 
-func (sh *SimpleHandler) GetData() any {
-	return sh.Data
+func (rh *RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, rh.Dest, http.StatusPermanentRedirect)
 }
 
 type Request struct{}
@@ -65,36 +82,11 @@ func convertTemplates(tfs TemplateFiles) []string {
 	return r
 }
 
-func Handle(h Handler) {
-	http.HandleFunc(h.GetPattern(), func(w http.ResponseWriter, r *http.Request) {
-		// TODO: implement our own pattern handling since the pattern handling
-		// by net/http includes all sub paths
-		// https://pkg.go.dev/net/http#ServeMux
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
-		funcs := h.GetFunctions()
-		funcMap := map[string]any{}
-		for _, f := range funcs {
-			funcMap[f.Name()] = f.Func()
-		}
-		baseName := filepath.Base(string(h.GetTemplate()))
-		tmpl, err := template.New(baseName).Funcs(funcMap).ParseFiles(convertTemplates(h.GetTemplates())...)
-		if err != nil {
-			w.Write([]byte(fmt.Sprintf("Server error: failed to render template: %v", err)))
-			return
-		}
-
-		if err := tmpl.Execute(w, h.GetData()); err != nil {
-			w.Write([]byte(fmt.Sprintf("Template error: %v", err)))
-		}
-	})
-}
-
 const LOCAL_ENV_VAR = "GOHANDLE_LOCAL"
 
 func Run(handlers []Handler) {
 	for _, h := range handlers {
-		Handle(h)
+		http.HandleFunc(h.GetPattern(), h.ServeHTTP)
 	}
 
 	port := ":8080"
@@ -105,7 +97,7 @@ func Run(handlers []Handler) {
 		port = "127.0.0.1:8080"
 		// Open Chrome
 		if err := exec.Command("cmd", `/c`, "start", `C:\Program Files\Google\Chrome\Application\chrome.exe`, `http://localhost:8080`).Start(); err != nil {
-			log.Fatalf("Failed to run chrome:", err)
+			log.Fatalf("Failed to run chrome: %v", err)
 		}
 	}
 
