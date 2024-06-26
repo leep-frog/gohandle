@@ -3,7 +3,6 @@ package gohandle
 import (
 	"fmt"
 	"html/template"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -30,7 +29,7 @@ type TemplateHandler struct {
 	Template     TemplateFile
 	Templates    TemplateFiles
 	Functions    []Function
-	GenerateData func(requestBodyBytes []byte) (any, error)
+	GenerateData func(r *http.Request) (any, error)
 }
 
 func (sh *TemplateHandler) GetPattern() string {
@@ -55,15 +54,9 @@ func (sh *TemplateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	b, err := io.ReadAll(r.Body)
-	if err != nil {
-		w.Write([]byte(fmt.Sprintf("Server error: failed to process request body: %v", err)))
-		return
-	}
-
 	var data any
 	if sh.GenerateData != nil {
-		data, err = sh.GenerateData(b)
+		data, err = sh.GenerateData(r)
 		if err != nil {
 			w.Write([]byte(fmt.Sprintf("Server error: failed to generate template data: %v", err)))
 			return
