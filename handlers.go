@@ -61,10 +61,13 @@ func (sh *TemplateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := sh.GenerateData(b)
-	if err != nil {
-		w.Write([]byte(fmt.Sprintf("Server error: failed to generate template data: %v", err)))
-		return
+	var data any
+	if sh.GenerateData != nil {
+		data, err = sh.GenerateData(b)
+		if err != nil {
+			w.Write([]byte(fmt.Sprintf("Server error: failed to generate template data: %v", err)))
+			return
+		}
 	}
 
 	if err := tmpl.Execute(w, data); err != nil {
